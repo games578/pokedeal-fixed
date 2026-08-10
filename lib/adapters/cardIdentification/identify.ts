@@ -1,7 +1,7 @@
 import { CardIdentification, RawVintedListing } from "@/lib/types";
 import { runTextHeuristics } from "./textHeuristics";
 import { identifyFromImage } from "./visionIdentifier";
-import { searchPokemonTcgCards } from "./pokemonTcgApi";
+import { searchPokemonTcgCards, normalizeNumber } from "./pokemonTcgApi";
 
 /**
  * Combines listing title/description text parsing with (optional) image
@@ -38,7 +38,7 @@ export async function identifyCard(
     : [];
   const verified = dbMatches.length > 0;
   const exactNumberMatch =
-    !!cardNumber && dbMatches.some((c) => c.number === cardNumber.split("/")[0]);
+    !!cardNumber && dbMatches.some((c) => c.number === normalizeNumber(cardNumber.split("/")[0]));
 
   // --- Confidence scoring ---------------------------------------------
   // Each piece of independent evidence contributes a bounded amount.
