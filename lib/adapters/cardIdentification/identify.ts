@@ -23,7 +23,7 @@ export async function identifyCard(
   );
 
   let cardName = vision?.cardName || text.cardName;
-  const setName = vision?.setName || text.setNameGuess;
+  let setName = vision?.setName || text.setNameGuess;
   const cardNumber = vision?.cardNumber || text.cardNumber;
   const rarity = vision?.rarity || text.rarity;
   const language = vision?.language || text.language;
@@ -36,6 +36,27 @@ export async function identifyCard(
   let dbMatches = cardName
     ? await searchPokemonTcgCards({ name: cardName, number: cardNumber, setName })
     : [];
+
+  // Listing titles sometimes mention more than one set-like phrase (e.g.
+  // "...Base Set - Team Rocket Wizards" for a card that's actually from
+  // Team Rocket), so the set name heuristic can pick the wrong one. A
+  // search over-constrained by a wrong set comes back empty even though
+  // the card is genuinely verifiable by name+number — so retry without
+  // the set filter before concluding it can't be verified at all.
+  let verifiedWithoutSet = false;
+  if (dbMatches.length === 0 && cardName && setName) {
+    const relaxed = await searchPokemonTcgCards({ name: cardName, number: cardNumber });
+    if (relaxed.length > 0) {
+      dbMatches = relaxed;
+      verifiedWithoutSet = true;
+      // We now have the database's own answer for the set — trust that
+      // over the text heuristic that just got contradicted.
+      const uniqueSets = new Set(relaxed.map((m) => m.set.name));
+      if (uniqueSets.size === 1) {
+        setName = relaxed[0].set.name;
+      }
+    }
+  }
 
   // Text heuristics only recognize a small seed list of popular species —
   // there are 1000+ Pokémon and listings routinely feature ones not on
@@ -61,6 +82,10 @@ export async function identifyCard(
     !!cardNumber && dbMatches.some((c) => c.number === normalizeNumber(cardNumber.split("/")[0]));
 
   // --- Confidence scoring ---------------------------------------------
+  // Each piece of independent evidence contributes a bounded amount.
+  // Nothing here can single-handedly reach the "confident" range, which
+  // is the point: a card name match alone should never be enough to
+  // greenlight a £15+ profit alert.
   let confidence = 0;
   const reasons: string[] = [];
 
@@ -93,7 +118,9 @@ export async function identifyCard(
   if (verified) {
     confidence += 0.15;
     reasons.push(
-      `Verified against pokemontcg.io: ${dbMatches.length} matching card record(s) found.`
+      verifiedWithoutSet
+        ? `Verified against pokemontcg.io by name+number (${dbMatches.length} record(s)); corrected the set to "${setName}" based on that match — the listing text's set guess didn't check out.`
+        : `Verified against pokemontcg.io: ${dbMatches.length} matching card record(s) found.`
     );
   } else if (cardName) {
     reasons.push(
