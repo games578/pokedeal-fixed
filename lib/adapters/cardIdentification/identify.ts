@@ -22,7 +22,7 @@ export async function identifyCard(
     listing.description
   );
 
-  const cardName = vision?.cardName || text.cardName;
+  let cardName = vision?.cardName || text.cardName;
   const setName = vision?.setName || text.setNameGuess;
   const cardNumber = vision?.cardNumber || text.cardNumber;
   const rarity = vision?.rarity || text.rarity;
@@ -33,24 +33,44 @@ export async function identifyCard(
   const condition = vision?.conditionAssessment || text.condition;
 
   // Verify against the card database whenever we have enough to search on.
-  const dbMatches = cardName
+  let dbMatches = cardName
     ? await searchPokemonTcgCards({ name: cardName, number: cardNumber, setName })
     : [];
+
+  // Text heuristics only recognize a small seed list of popular species —
+  // there are 1000+ Pokémon and listings routinely feature ones not on
+  // that list (e.g. "Dragonair"). Rather than maintain a giant static
+  // name list, fall back to asking pokemontcg.io directly: a card number
+  // (plus set, when we have one) is usually enough to uniquely resolve
+  // the card, and the database is the real source of truth for species
+  // names. Only trust this when every match it returns agrees on the
+  // name — if the number is ambiguous across different species, don't guess.
+  let nameFromDbLookup = false;
+  if (!cardName && cardNumber) {
+    const fallbackMatches = await searchPokemonTcgCards({ number: cardNumber, setName });
+    const uniqueNames = new Set(fallbackMatches.map((m) => m.name.toLowerCase()));
+    if (fallbackMatches.length > 0 && uniqueNames.size === 1) {
+      cardName = fallbackMatches[0].name;
+      nameFromDbLookup = true;
+      dbMatches = fallbackMatches;
+    }
+  }
+
   const verified = dbMatches.length > 0;
   const exactNumberMatch =
     !!cardNumber && dbMatches.some((c) => c.number === normalizeNumber(cardNumber.split("/")[0]));
 
   // --- Confidence scoring ---------------------------------------------
-  // Each piece of independent evidence contributes a bounded amount.
-  // Nothing here can single-handedly reach the "confident" range, which
-  // is the point: a card name match alone should never be enough to
-  // greenlight a £15+ profit alert.
   let confidence = 0;
   const reasons: string[] = [];
 
   if (cardName) {
     confidence += 0.2;
-    reasons.push(`Card name identified: ${cardName}.`);
+    reasons.push(
+      nameFromDbLookup
+        ? `Card name not found in listing text, but card number ${cardNumber} uniquely matched "${cardName}" in the pokemontcg.io database.`
+        : `Card name identified: ${cardName}.`
+    );
   }
   if (vision) {
     confidence += vision.modelConfidence * 0.3;
