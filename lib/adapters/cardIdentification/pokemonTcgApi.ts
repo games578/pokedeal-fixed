@@ -35,7 +35,7 @@ export async function searchPokemonTcgCards(params: {
   const clauses: string[] = [];
   if (params.name) clauses.push(`name:"${escapeQuery(params.name)}"`);
   if (params.number) {
-    const num = params.number.split("/")[0];
+    const num = normalizeNumber(params.number.split("/")[0]);
     clauses.push(`number:${escapeQuery(num)}`);
   }
   if (params.setName) clauses.push(`set.name:"${escapeQuery(params.setName)}"`);
@@ -49,19 +49,27 @@ export async function searchPokemonTcgCards(params: {
       headers: process.env.POKEMONTCG_API_KEY
         ? { "X-Api-Key": process.env.POKEMONTCG_API_KEY }
         : {},
-      // Keep this bounded so a slow/unreachable third party never hangs the pipeline.
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return [];
     const json = await res.json();
     return (json.data ?? []) as PokemonTcgCard[];
   } catch {
-    // Network/API issues degrade gracefully: identification falls back to
-    // text-only confidence rather than throwing and losing the listing.
     return [];
   }
 }
 
 function escapeQuery(s: string): string {
   return s.replace(/"/g, '\\"');
+}
+
+/**
+ * pokemontcg.io stores card numbers without leading zeros ("14", not
+ * "014"), but listings/scans often include them (e.g. "014/100"). Strip
+ * leading zeros so a correctly-identified card doesn't fail verification
+ * purely over zero-padding. Leaves non-numeric numbers (promos like
+ * "SWSH001") untouched.
+ */
+export function normalizeNumber(n: string): string {
+  return /^\d+$/.test(n) ? String(parseInt(n, 10)) : n;
 }
