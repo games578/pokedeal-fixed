@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "PokéDeals Profit Overlay",
+  "version": "1.0.0",
+  "description": "Shows estimated resale profit on Pokémon card listings while you browse Vinted.",
+  "permissions": ["storage", "permissions"],
+  "host_permissions": [
+    "https://*.vinted.co.uk/*",
+    "https://*.vinted.com/*",
+    "https://*.vinted.fr/*",
+    "https://*.vinted.de/*"
+  ],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.vinted.co.uk/*",
+        "https://*.vinted.com/*",
+        "https://*.vinted.fr/*",
+        "https://*.vinted.de/*"
+      ],
+      "js": ["content.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "options.html",
+    "default_title": "PokéDeals settings"
+  },
+  "options_page": "options.html"
+}
